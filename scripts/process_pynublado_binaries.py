@@ -2,8 +2,6 @@ import sys
 import time
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 
@@ -84,10 +82,15 @@ def process_pynublado_binaries(entry_point: str):
     for sample_path in sample_paths:
         print(f"\t\t\t {sample_path}")
         inputs = pd.read_pickle(Path(sample_path, "inputs.pkl"), compression="infer")
+        status = pd.read_pickle(Path(sample_path, "status.pkl"), compression="infer")
         emis = pd.read_pickle(Path(sample_path, "emis.pkl"), compression="infer")
         emis.drop(columns=["index"], inplace=True)
 
-        data = inputs.set_index("id").join(emis.set_index("id"))
+        # drop outputs for whose status code was not EXITED_OK (0)
+        data = inputs.set_index("id").join(status.set_index("id"))
+        data = data.join(emis.set_index("id"))
+        data = data[data.status == 0]
+        data.drop(columns=["index", "status"], inplace=True)
         list_dataframes.append(data)
 
         del inputs, emis, data
