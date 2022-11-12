@@ -1,4 +1,5 @@
 SETTING_TRAIN_FRACTION = 0.8
+SETTING_VAL_FRACTION = 0.1
 DEEPNUBLADO_INPUTS = [
     "gas_density",
     "gas_phase_metallicity",
