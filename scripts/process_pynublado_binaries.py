@@ -6,6 +6,15 @@ import pandas as pd
 
 
 def process_pynublado_binaries(entry_point: str):
+    """
+    Reads binary sample files produced by pyNublado runs and stacks them (if multiple samples exist).
+    Files that are processed so far are
+        1. Input + status outcome (Classifier data)
+        2. Emission line data output (Regressor)
+
+    :param entry_point: Path to directory containing the samples
+    :return: writes CSV files.
+    """
 
     # manage exceptions
     if not Path(entry_point).exists():
