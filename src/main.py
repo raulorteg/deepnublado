@@ -48,9 +48,9 @@ if __name__ == "__main__":
 
     # arguments for data handling
     parser.add_argument(
-        "--csv_dir",
+        "--data_dir",
         type=str,
-        help="Path to cvs directory",
+        help="Path to (CSV) data directory",
         required=True
     )
 
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     my_config = parser.parse_args()
 
     my_config.out_dir = os.path.abspath(my_config.out_dir)
-    my_config.csv_dir = os.path.abspath(my_config.csv_dir)
+    my_config.data_dir = os.path.abspath(my_config.data_dir)
 
     main(my_config)
 
