@@ -1,22 +1,25 @@
 """
 This file contains the main data class(es)
 """
-
 import torch
 from torch.utils.data import Dataset
 import numpy as np
 import pandas as pd
+from settings import SETTING_TRAIN_FRACTION, SETTING_VAL_FRACTION, SETTING_TEST_FRACTION
 
 
 class DeepNubladoData(Dataset):
 
     def __init__(self, parameters, run_outcomes,
                  emission_lines, continuum_data=None,
-                 split='train',
-                 split_fraction=(0.8, 0.1, 0.1)):
+                 split: str = 'train',
+                 split_fraction: tuple = (SETTING_TRAIN_FRACTION,
+                                          SETTING_VAL_FRACTION,
+                                          SETTING_TEST_FRACTION)
+                 ):
 
         if sum(split_fraction) != 1:
-            raise Exception(f"Fractions of train | val | test should add up to 1.0")
+            raise Exception(f"DeepNubladoData init: Fractions of train | val | test should add up to 1.0")
 
         train_fraction, val_fraction, test_fraction = split_fraction
 
@@ -26,13 +29,15 @@ class DeepNubladoData(Dataset):
             begin = 0
             last = int(train_fraction * n_samples)
 
-        if split == 'val':
+        elif split == 'val':
             begin = int(train_fraction * n_samples)
             last = int((train_fraction + val_fraction) * n_samples)
 
-        if split == 'test':
+        elif split == 'test':
             begin = int((train_fraction + val_fraction) * n_samples)
             last = -1
+        else:
+            raise Exception(f"DeepNubladoData init:split should be either train, val, or test")
 
         self.parameters = torch.from_numpy(parameters[begin:last]).type(torch.FloatTensor)
         self.run_outcomes = torch.from_numpy(run_outcomes[begin:last]).type(torch.FloatTensor)
