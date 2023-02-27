@@ -2,38 +2,78 @@
 This file contains methods used to set up a single training run
 """
 import os
+import numpy as np
+import pandas as pd
 from datetime import datetime
+from torch.utils.data import DataLoader
 
+from data import DeepNubladoData
+from utils import utils_scale_inputs, utils_rescale_inputs
 from settings import \
-    SETTING_MAIN_OUTPUT_DIR, \
     SETTING_DATA_PRODUCTS_SUBDIR, \
     SETTING_PLOTS_SUBDIR, \
-    SCALER_MAX_INPUTS, \
-    SCALER_MIN_INPUTS
+    SETTING_LINE_FILE, \
+    DEEPNUBLADO_REGRESSOR_OUTPUTS, \
+    DEEPNUBLADO_INPUTS, \
+    SETTING_NORMALISE_INPUTS
 
 
 def setup_main(config):
+    """
+    Main driver method to set up a run
 
-    setup_load_data(config)
+    :param config: argparse object
+    :return:  3 pytorch data loaders
+    """
+
+    # TODO: additional randomisation of data?
+    # TODO: load continuum data & run outcomes?
+
+    inputs, lines = setup_load_data(config)
     setup_run_directories(config)
+
+    if SETTING_NORMALISE_INPUTS:
+        inputs = utils_scale_inputs(parameters=inputs)
+
+    # additional randomisation of data here?
+
+    # data loaders
+    training_data = DeepNubladoData(parameters=inputs, emission_lines=lines, split='train')
+    validation_data = DeepNubladoData(parameters=inputs, emission_lines=lines, split='val')
+    testing_data = DeepNubladoData(parameters=inputs, emission_lines=lines, split='test')
+
+    train_loader = DataLoader(training_data, batch_size=config.batch_size, shuffle=True)
+    val_loader = DataLoader(validation_data, batch_size=config.batch_size)
+    test_loader = DataLoader(testing_data, batch_size=config.batch_size)
+
+    return train_loader, val_loader, test_loader
 
 
 def setup_load_data(config):
+    """
+    Imports data file as pandas data frame for easy manipulation, then
+    converts and returns data as numpy arrays
 
-    # 1. locate and load data files
+    :param config: argparse object
+    :return: nd arrays for parameters/inputs and emission lines
+    """
 
-    # 2. possible transform parameter data
-    #   see settings.SCALER_MIN_INPUTS
-    #   and settings.SCALER_MAX_INPUTS
+    line_file_path = os.path.join(config.data_dir, SETTING_LINE_FILE)
+    all_df = pd.read_csv(line_file_path)
 
-    # 3. possibly filter data
-    #    see settings.DEEPNUBLADO_INPUTS
-    #    and settings.DEEPNUBLADO_REGRESSOR_OUTPUTS
+    inputs_df = all_df.filter(DEEPNUBLADO_INPUTS)
+    lines_df = all_df.filter(DEEPNUBLADO_REGRESSOR_OUTPUTS)
 
-    pass
+    inputs = inputs_df.to_numpy()
+    lines = lines_df.to_numpy()
+
+    return inputs, lines
 
 
 def setup_run_directories(config):
+    """
+    Creates a unique output directory featuring a run_id
+    """
 
     run_id = datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
     config.run_dir = os.path.join(config.out_dir, run_id)
@@ -49,6 +89,7 @@ def setup_run_directories(config):
     os.makedirs(config.run_dir, exist_ok=False)
     os.makedirs(d, exist_ok=False)
     os.makedirs(p, exist_ok=False)
+
 
 
 

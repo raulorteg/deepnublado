@@ -10,8 +10,11 @@ from settings import SETTING_TRAIN_FRACTION, SETTING_VAL_FRACTION, SETTING_TEST_
 
 class DeepNubladoData(Dataset):
 
-    def __init__(self, parameters, run_outcomes,
-                 emission_lines, continuum_data=None,
+    def __init__(self,
+                 parameters,
+                 emission_lines,
+                 run_outcomes=None,
+                 continuum_data=None,
                  split: str = 'train',
                  split_fraction: tuple = (SETTING_TRAIN_FRACTION,
                                           SETTING_VAL_FRACTION,
@@ -37,11 +40,13 @@ class DeepNubladoData(Dataset):
             begin = int((train_fraction + val_fraction) * n_samples)
             last = -1
         else:
-            raise Exception(f"DeepNubladoData init:split should be either train, val, or test")
+            raise Exception(f"DeepNubladoData init: split should be either 'train', 'val', or 'test'")
 
         self.parameters = torch.from_numpy(parameters[begin:last]).type(torch.FloatTensor)
-        self.run_outcomes = torch.from_numpy(run_outcomes[begin:last]).type(torch.FloatTensor)
         self.emission_lines = torch.from_numpy(emission_lines[begin:last]).type(torch.FloatTensor)
+
+        if run_outcomes:
+            self.run_outcomes = torch.from_numpy(run_outcomes[begin:last]).type(torch.FloatTensor)
 
         if continuum_data:
             self.continuum_data = torch.from_numpy(continuum_data[begin:last]).type(torch.FloatTensor)
@@ -49,17 +54,10 @@ class DeepNubladoData(Dataset):
     def __len__(self):
         return self.parameters.shape[0]
 
-    # def __getitem__(self, index):
-    #
-    #     out = []
-    #     out.append(self.parameters[index])
-    #     out.append(self.run_outcomes[index])
-    #
-    #     for i in range(self.emission_lines.shape[1]):
-    #         out.append(self.emission_lines[index, i])
-    #
-    #     if self.continuum_data:
-    #         for i in range(self.continuum_data.shape[1]):
-    #             out.append(self.continuum_data[index, i])
-    #
-    #     return tuple(out)
+    def __getitem__(self, index):
+
+        _lines = self.emission_lines[index]
+        _inputs = self.parameters[index]
+
+        # TODO: add continuum here
+        return _inputs, _lines

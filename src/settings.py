@@ -1,10 +1,17 @@
-SETTING_MAIN_OUTPUT_DIR = "output"
+SETTING_MAIN_OUTPUT_DIR = "../data/output"
 SETTING_DATA_PRODUCTS_SUBDIR = "data_products"
 SETTING_PLOTS_SUBDIR = "plots"
+
+SETTING_INPUTS_FILE = "classifier.csv"  # also contains run outcomes
+SETTING_LINE_FILE = "regressor.csv"     # also contains inputs
+SETTING_CONTINUUM_FILE = "tba.csv"
+
+SETTING_NORMALISE_INPUTS = True         # normalise all inputs to [0,1]
 
 SETTING_TRAIN_FRACTION = 0.8
 SETTING_VAL_FRACTION = 0.1
 SETTING_TEST_FRACTION = 0.1
+
 DEEPNUBLADO_INPUTS = [
     "gas_density",
     "gas_phase_metallicity",
@@ -82,6 +89,7 @@ SETTING_LEARNING_RATE_GAMMA = 0.99
 SETTING_LEARNING_RATE_STEP_SIZE = 1
 SETTING_P_DROPOUT = 0.2
 SETTING_EVAL_FREQ = 1
+SETTING_TEST_FREQ = 25
 
 SCALER_MIN_INPUTS = {
     "gas_density": -2.999831499071751,

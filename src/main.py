@@ -3,16 +3,28 @@ Main run script for our DeepNublado experiments
 """
 import argparse
 import os
+import copy
 import torch
+import numpy as np
 
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 import torch.nn.functional as F
 
-from settings import SETTING_NUM_EPOCHS, \
+from models import MLP1
+from setup import setup_main
+from data import DeepNubladoData
+from utils import utils_rescale_inputs
+
+from settings import \
+    SETTING_MAIN_OUTPUT_DIR, \
+    SETTING_NUM_EPOCHS, \
     SETTING_BATCH_SIZE, \
     SETTING_LEARNING_RATE, \
-    SETTING_P_DROPOUT
+    SETTING_P_DROPOUT, \
+    DEEPNUBLADO_REGRESSOR_OUTPUTS, \
+    SETTING_DATA_PRODUCTS_SUBDIR, \
+    SETTING_TEST_FREQ
 
 # -----------------------------------------------------------------
 #  CUDA available?
@@ -27,6 +39,153 @@ else:
     FloatTensor = torch.FloatTensor
 
 
+# -----------------------------------------------------------------
+#  loss function(s)
+# -----------------------------------------------------------------
+def loss_function(gen_x, real_x, config):
+    """
+    Computes the loss function(s).
+
+    Note: This is its own function in case we want to add complexity here later
+
+    :param gen_x: inferred data
+    :param real_x: simulated data (ground truth)
+    :param config: user config
+    :return:
+    """
+
+    loss = F.mse_loss(input=gen_x,
+                      target=real_x.view(-1, len(DEEPNUBLADO_REGRESSOR_OUTPUTS)),
+                      reduction='mean')
+
+    return loss
+
+
+# -----------------------------------------------------------------
+#  Training
+# -----------------------------------------------------------------
+def train_model(model, optimizer, train_loader, config):
+    """
+    This function trains the network for one epoch.
+
+    :param model: current model state
+    :param optimizer: optimizer object to perform the back-propagation
+    :param train_loader: data loader containing training data
+    :param config: config object with user supplied parameters
+    :return: Averaged training loss. No need to return the model as the optimizer modifies it inplace.
+    """
+
+    if cuda:
+        model.cuda()
+
+    model.train()
+    train_loss = 0
+
+    for batch_idx, (inputs, emission_lines) in enumerate(train_loader):
+
+        # configure data
+        real_lines = Variable(emission_lines.type(FloatTensor))
+        real_inputs = Variable(inputs.type(FloatTensor))
+
+        # zero the gradients on each iteration
+        optimizer.zero_grad()
+
+        # generate a batch of lines
+        gen_lines = model(real_inputs)
+
+        # estimate loss
+        loss = loss_function(gen_lines, real_lines, config)
+
+        train_loss += loss.item()    # average loss per batch
+
+        # back propagation
+        loss.backward()
+        optimizer.step()
+
+    average_loss = train_loss / len(train_loader)   # divide by number of batches (!= batch size)
+
+    return average_loss  # float
+
+
+# -----------------------------------------------------------------
+#   evaluate model with test or validation set
+# -----------------------------------------------------------------
+def evaluate_model(current_epoch: int, data_loader, model, path, config,
+                   save_results=False, best_model=False):
+    """
+    function runs the given dataset through the model, returns mse_loss,
+    and (optionally) saves the results as well as ground truth to file.
+
+    Args:
+        current_epoch: current epoch
+        data_loader: data loader used for the inference, most likely the test set
+        path: path to output directory
+        model: current model state
+        config: config object with user supplied parameters
+        save_results: flag to save generated profiles locally (default: False)
+        best_model: flag for testing on best model
+    """
+
+    if save_results:
+        print("\033[94m\033[1mTesting the network now at epoch %d \033[0m" % current_epoch)
+
+    if cuda:
+        model.cuda()
+
+    if save_results:
+        lines_gen_all = torch.tensor([], device=device)
+        lines_true_all = torch.tensor([], device=device)
+        inputs_true_all = torch.tensor([], device=device)
+
+    # Note: ground truth data could be obtained elsewhere but by getting it from the data loader here
+    # we don't have to worry about randomisation of the samples.
+
+    model.eval()
+
+    loss_mse = 0.0
+
+    with torch.no_grad():
+        for i, (inputs, emission_lines) in enumerate(data_loader):
+
+            # configure input
+            lines_true = Variable(emission_lines.type(FloatTensor))
+            inputs = Variable(inputs.type(FloatTensor))
+
+            # inference
+            lines_gen = model(inputs)
+
+            loss_mse += loss_function(lines_true, lines_gen, config)
+
+            if save_results:
+                # collate data
+                lines_gen_all = torch.cat((lines_gen_all, lines_gen), 0)
+                lines_true_all = torch.cat((lines_true_all, lines_true), 0)
+                inputs_true_all = torch.cat((inputs_true_all, inputs), 0)
+
+    # mean of computed losses
+    loss_mse = loss_mse / len(data_loader)
+
+    # if save_results:
+    #     # move data to CPU, re-scale inputs, and write everything to file
+    #     lines_gen_all = lines_gen_all.cpu().numpy()
+    #     lines_true_all = lines_true_all.cpu().numpy()
+    #     inputs_true_all = inputs_true_all.cpu().numpy()
+    #
+    #     inputs_true_all = utils_rescale_inputs(parameters=inputs_true_all)
+    #
+    #     if best_model:
+    #         prefix = 'best'
+    #     else:
+    #         prefix = 'test'
+    #
+    # TODO: save output
+
+    return loss_mse.item()
+
+
+# -----------------------------------------------------------------
+#  Main driver function
+# -----------------------------------------------------------------
 def main(config):
     """
     Main driver function for running our experiments
@@ -34,7 +193,97 @@ def main(config):
     :param config: argparse object
     :return: nothing
     """
-    pass
+
+    train_loader, val_loader, test_loader = setup_main(config)
+
+    # select model and prep optimizer
+    model = MLP1(conf=config)
+
+    if cuda:
+        model.cuda()
+
+    optimizer = torch.optim.Adam(model.parameters(),
+                                 lr=config.lr,
+                                 betas=(0.9, 0.999)
+                                 )
+
+    # variables for bookkeeping
+    train_loss_array = val_loss_array = np.empty(0)
+    best_model = copy.deepcopy(model)
+    best_loss = np.inf
+    best_epoch = 1
+    n_epoch_without_improvement = 0
+    stopped_early = False
+    epochs_trained = -1
+    data_products_path = os.path.join(config.run_dir, SETTING_DATA_PRODUCTS_SUBDIR)
+
+    # main training loop
+    print("\033[96m\033[1m\nTraining starts now\033[0m")
+    for epoch in range(1, config.n_epochs + 1):
+
+        train_loss = train_model(model, optimizer, train_loader, config)
+
+        train_loss_array = np.append(train_loss_array, train_loss)
+
+        val_loss = evaluate_model(current_epoch=epoch,
+                                  data_loader=val_loader,
+                                  model=model,
+                                  path=data_products_path,
+                                  config=config,
+                                  save_results=False,
+                                  best_model=False
+                                  )
+
+        val_loss_array = np.append(val_loss_array, val_loss)
+
+        if val_loss < best_loss:
+            best_loss = val_loss
+            best_model = copy.deepcopy(model)
+            best_epoch = epoch
+            n_epoch_without_improvement = 0
+        else:
+            n_epoch_without_improvement += 1
+
+        print(f"[Epoch {epoch:4}/{config.n_epochs:4}] "
+              f"  [Training loss: {train_loss:8.4e}] "
+              f"  [Validation loss: {val_loss:8.4e}]"
+              f"  [Best epoch: {best_epoch:4}]"
+              )
+
+        # check for testing criterion
+        if epoch % SETTING_TEST_FREQ == 0 or epoch == config.n_epochs:
+
+            test_loss = evaluate_model(current_epoch=epoch,
+                                       data_loader=test_loader,
+                                       model=model,
+                                       path=data_products_path,
+                                       config=config,
+                                       save_results=True,
+                                       best_model=False
+                                       )
+
+    print("\033[96m\033[1m\nTraining complete\033[0m\n")
+
+    # TODO: run evaluation with best model
+
+    # Save some results to config object for later use
+
+    config.best_epoch = best_epoch
+    config.best_val = best_loss
+    # config.best_test = best_test
+
+    # TODO: write a log
+
+    if config.analysis:
+        print("\n\033[96m\033[1m\nRunning analysis\033[0m\n")
+
+    # TODO: save best model
+    # TODO: add early stopping without crashing
+    # TODO: add model selection once we have more than one
+    # TODO: add continuum data
+    # TODO: add analysis routines
+
+    # TODO: transform line data / add offset to 0 / use log_10 / ...
 
 
 # -----------------------------------------------------------------
@@ -57,8 +306,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--out_dir",
         type=str,
-        default="output",
-        help="Path to output directory, used for all plots and data products, default: ./output/"
+        default=SETTING_MAIN_OUTPUT_DIR,
+        help=f"Path to output directory, used for all plots and data products, default: {SETTING_MAIN_OUTPUT_DIR}"
     )
 
     # network optimisation
@@ -141,4 +390,3 @@ if __name__ == "__main__":
     my_config.data_dir = os.path.abspath(my_config.data_dir)
 
     main(my_config)
-
