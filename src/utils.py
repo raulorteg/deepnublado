@@ -7,7 +7,8 @@ import numpy as np
 from settings import \
     SCALER_MAX_INPUTS, \
     SCALER_MIN_INPUTS, \
-    DEEPNUBLADO_INPUTS
+    DEEPNUBLADO_INPUTS, \
+    SETTING_TRANSFORM_LINE_DATA_OFFSET
 
 
 # -----------------------------------------------------------------
@@ -62,3 +63,31 @@ def utils_rescale_inputs_single(p):
         p[i] = p[i] * (b - a) + a
 
     return p
+
+
+# -----------------------------------------------------------------
+# transform and re-transform Cloudy emission line outputs
+# -----------------------------------------------------------------
+def utils_transform_line_data(emission_lines):
+    """
+    A simple first approach to transform the emission line data
+    in order to reduce the high dynamic range from 30 orders of
+    magnitude 2: we add an offset and take the log.
+
+    TODO: test other methods? E.g. Raul's min-max scaling?
+
+    :param emission_lines: 2D numpy array containing all line data
+    :return: transformed 2D numpy array
+    """
+
+    return np.log10(emission_lines + SETTING_TRANSFORM_LINE_DATA_OFFSET)
+
+
+def utils_de_transform_line_data(emission_lines):
+    """
+    Reverse of the line data transformation function.
+    :param emission_lines:  2D numpy array containing all line data
+    :return: de-transformed 2D numpy array
+    """
+
+    return 10**emission_lines - SETTING_TRANSFORM_LINE_DATA_OFFSET

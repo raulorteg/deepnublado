@@ -8,14 +8,15 @@ from datetime import datetime
 from torch.utils.data import DataLoader
 
 from data import DeepNubladoData
-from utils import utils_scale_inputs, utils_rescale_inputs
+from utils import utils_scale_inputs, utils_transform_line_data
 from settings import \
     SETTING_DATA_PRODUCTS_SUBDIR, \
     SETTING_PLOTS_SUBDIR, \
     SETTING_LINE_FILE, \
     DEEPNUBLADO_REGRESSOR_OUTPUTS, \
     DEEPNUBLADO_INPUTS, \
-    SETTING_NORMALISE_INPUTS
+    SETTING_NORMALISE_INPUTS, \
+    SETTING_TRANSFORM_LINE_DATA
 
 
 def setup_main(config):
@@ -23,7 +24,7 @@ def setup_main(config):
     Main driver method to set up a run
 
     :param config: argparse object
-    :return:  3 pytorch data loaders
+    :return: 3 pytorch data loaders
     """
 
     # TODO: additional randomisation of data?
@@ -34,6 +35,9 @@ def setup_main(config):
 
     if SETTING_NORMALISE_INPUTS:
         inputs = utils_scale_inputs(parameters=inputs)
+
+    if SETTING_TRANSFORM_LINE_DATA:
+        lines = utils_transform_line_data(emission_lines=lines)
 
     # additional randomisation of data here?
 

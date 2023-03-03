@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from models import MLP1
 from setup import setup_main
 from data import DeepNubladoData
-from utils import utils_rescale_inputs
+from utils import utils_rescale_inputs, utils_de_transform_line_data
 
 from settings import \
     SETTING_MAIN_OUTPUT_DIR, \
@@ -24,7 +24,9 @@ from settings import \
     SETTING_P_DROPOUT, \
     DEEPNUBLADO_REGRESSOR_OUTPUTS, \
     SETTING_DATA_PRODUCTS_SUBDIR, \
-    SETTING_TEST_FREQ
+    SETTING_TEST_FREQ, \
+    SETTING_NORMALISE_INPUTS, \
+    SETTING_TRANSFORM_LINE_DATA
 
 # -----------------------------------------------------------------
 #  CUDA available?
@@ -50,7 +52,7 @@ def loss_function(gen_x, real_x, config):
 
     :param gen_x: inferred data
     :param real_x: simulated data (ground truth)
-    :param config: user config
+    :param config: user config (in case it's needed later)
     :return:
     """
 
@@ -127,7 +129,7 @@ def evaluate_model(current_epoch: int, data_loader, model, path, config,
     """
 
     if save_results:
-        print("\033[94m\033[1mTesting the network now at epoch %d \033[0m" % current_epoch)
+        print(F"\033[94m\033[1mTesting the network now at epoch {current_epoch} \033[0m")
 
     if cuda:
         model.cuda()
@@ -136,13 +138,12 @@ def evaluate_model(current_epoch: int, data_loader, model, path, config,
         lines_gen_all = torch.tensor([], device=device)
         lines_true_all = torch.tensor([], device=device)
         inputs_true_all = torch.tensor([], device=device)
-
-    # Note: ground truth data could be obtained elsewhere but by getting it from the data loader here
-    # we don't have to worry about randomisation of the samples.
+        # getting ground truth data here, so we don't have to worry about
+        # randomisation of the samples.
 
     model.eval()
 
-    loss_mse = 0.0
+    loss = 0.0
 
     with torch.no_grad():
         for i, (inputs, emission_lines) in enumerate(data_loader):
@@ -154,33 +155,38 @@ def evaluate_model(current_epoch: int, data_loader, model, path, config,
             # inference
             lines_gen = model(inputs)
 
-            loss_mse += loss_function(lines_true, lines_gen, config)
+            loss += loss_function(lines_true, lines_gen, config)
 
             if save_results:
                 # collate data
-                lines_gen_all = torch.cat((lines_gen_all, lines_gen), 0)
-                lines_true_all = torch.cat((lines_true_all, lines_true), 0)
-                inputs_true_all = torch.cat((inputs_true_all, inputs), 0)
+                lines_gen_all = torch.cat(tensors=(lines_gen_all, lines_gen), dim=0)
+                lines_true_all = torch.cat(tensors=(lines_true_all, lines_true), dim=0)
+                inputs_true_all = torch.cat(tensors=(inputs_true_all, inputs), dim=0)
 
     # mean of computed losses
-    loss_mse = loss_mse / len(data_loader)
+    loss = loss / len(data_loader)
 
-    # if save_results:
-    #     # move data to CPU, re-scale inputs, and write everything to file
-    #     lines_gen_all = lines_gen_all.cpu().numpy()
-    #     lines_true_all = lines_true_all.cpu().numpy()
-    #     inputs_true_all = inputs_true_all.cpu().numpy()
-    #
-    #     inputs_true_all = utils_rescale_inputs(parameters=inputs_true_all)
-    #
-    #     if best_model:
-    #         prefix = 'best'
-    #     else:
-    #         prefix = 'test'
-    #
-    # TODO: save output
+    if save_results:
+        # move data to CPU, re-scale inputs, and write everything to file
+        lines_gen_all = lines_gen_all.cpu().numpy()
+        lines_true_all = lines_true_all.cpu().numpy()
+        inputs_true_all = inputs_true_all.cpu().numpy()
 
-    return loss_mse.item()
+        if SETTING_NORMALISE_INPUTS:
+            inputs_true_all = utils_rescale_inputs(parameters=inputs_true_all)
+
+        if SETTING_TRANSFORM_LINE_DATA:
+            lines_gen_all = utils_de_transform_line_data(emission_lines=lines_gen_all)
+            lines_true_all = utils_de_transform_line_data(emission_lines=lines_true_all)
+
+        if best_model:
+            prefix = 'best'
+        else:
+            prefix = 'test'
+
+        # TODO: save output
+
+    return loss.item()
 
 
 # -----------------------------------------------------------------
@@ -282,8 +288,6 @@ def main(config):
     # TODO: add model selection once we have more than one
     # TODO: add continuum data
     # TODO: add analysis routines
-
-    # TODO: transform line data / add offset to 0 / use log_10 / ...
 
 
 # -----------------------------------------------------------------
