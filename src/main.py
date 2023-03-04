@@ -4,8 +4,10 @@ Main run script for our DeepNublado experiments
 import argparse
 import os
 import copy
+import logging
 import torch
 import numpy as np
+
 
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
@@ -14,7 +16,14 @@ import torch.nn.functional as F
 from models import MLP1
 from setup import setup_main
 from data import DeepNubladoData
-from utils import utils_rescale_inputs, utils_de_transform_line_data
+from utils import \
+    utils_rescale_inputs, \
+    utils_de_transform_line_data, \
+    utils_save_model, \
+    utils_save_loss, \
+    utils_save_config_to_file, \
+    utils_save_config_to_log, \
+    utils_save_test_data
 
 from settings import \
     SETTING_MAIN_OUTPUT_DIR, \
@@ -28,6 +37,7 @@ from settings import \
     SETTING_NORMALISE_INPUTS, \
     SETTING_TRANSFORM_LINE_DATA
 
+from analysis import analysis_main
 # -----------------------------------------------------------------
 #  CUDA available?
 # -----------------------------------------------------------------
@@ -158,7 +168,7 @@ def evaluate_model(current_epoch: int, data_loader, model, path, config,
             loss += loss_function(lines_true, lines_gen, config)
 
             if save_results:
-                # collate data
+                # collate data from different batches
                 lines_gen_all = torch.cat(tensors=(lines_gen_all, lines_gen), dim=0)
                 lines_true_all = torch.cat(tensors=(lines_true_all, lines_true), dim=0)
                 inputs_true_all = torch.cat(tensors=(inputs_true_all, inputs), dim=0)
@@ -184,7 +194,15 @@ def evaluate_model(current_epoch: int, data_loader, model, path, config,
         else:
             prefix = 'test'
 
-        # TODO: save output
+        utils_save_test_data(
+            parameters=inputs_true_all,
+            lines_true=lines_true_all,
+            lines_gen=lines_gen_all,
+            path=path,
+            epoch=current_epoch,
+            prefix=prefix
+            )
+
 
     return loss.item()
 
@@ -259,35 +277,60 @@ def main(config):
         # check for testing criterion
         if epoch % SETTING_TEST_FREQ == 0 or epoch == config.n_epochs:
 
-            test_loss = evaluate_model(current_epoch=epoch,
-                                       data_loader=test_loader,
-                                       model=model,
-                                       path=data_products_path,
-                                       config=config,
-                                       save_results=True,
-                                       best_model=False
-                                       )
+            _ = evaluate_model(current_epoch=epoch,
+                               data_loader=test_loader,
+                               model=model,
+                               path=data_products_path,
+                               config=config,
+                               save_results=True,
+                               best_model=False
+                               )
 
     print("\033[96m\033[1m\nTraining complete\033[0m\n")
+    logging.info(f"Training complete. Best epoch is N={best_epoch}")
 
-    # TODO: run evaluation with best model
+    # evaluate the best model
+    _ = evaluate_model(current_epoch=best_epoch,
+                       data_loader=test_loader,
+                       model=best_model,
+                       path=data_products_path,
+                       config=config,
+                       save_results=True,
+                       best_model=True
+                       )
+
+    # Save the best model and loss functions
+    utils_save_model(state=best_model.state_dict(),
+                     path=data_products_path,
+                     n_epoch=best_epoch,
+                     best_model=True)
+
+    utils_save_loss(loss_array=train_loss_array,
+                    path=data_products_path,
+                    n_epoch=config.n_epochs,
+                    prefix='train'
+                    )
+    utils_save_loss(loss_array=val_loss_array,
+                    path=data_products_path,
+                    n_epoch=config.n_epochs,
+                    prefix='val'
+                    )
 
     # Save some results to config object for later use
-
     config.best_epoch = best_epoch
     config.best_val = best_loss
-    # config.best_test = best_test
+    config.cuda_used = cuda
 
-    # TODO: write a log
+    utils_save_config_to_file(config)
+    utils_save_config_to_log(config)
 
     if config.analysis:
         print("\n\033[96m\033[1m\nRunning analysis\033[0m\n")
+        analysis_main(config)
 
-    # TODO: save best model
     # TODO: add early stopping without crashing
     # TODO: add model selection once we have more than one
     # TODO: add continuum data
-    # TODO: add analysis routines
 
 
 # -----------------------------------------------------------------

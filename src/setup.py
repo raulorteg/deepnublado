@@ -2,6 +2,7 @@
 This file contains methods used to set up a single training run
 """
 import os
+import logging
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -30,8 +31,9 @@ def setup_main(config):
     # TODO: additional randomisation of data?
     # TODO: load continuum data & run outcomes?
 
-    inputs, lines = setup_load_data(config)
     setup_run_directories(config)
+    setup_log_file(config)
+    inputs, lines = setup_load_data(config)
 
     if SETTING_NORMALISE_INPUTS:
         inputs = utils_scale_inputs(parameters=inputs)
@@ -51,6 +53,21 @@ def setup_main(config):
     test_loader = DataLoader(testing_data, batch_size=config.batch_size)
 
     return train_loader, val_loader, test_loader
+
+
+def setup_log_file(config):
+    """
+    Sets up and configures the logger package. Here, we create a log
+    file in the run dir and define the log format string.
+    :param config: config object
+    :return: -
+    """
+
+    log_file = os.path.join(config.run_dir, 'run_log')
+    logging.basicConfig(filename=log_file,
+                        level=logging.INFO,
+                        format='%(asctime)s - %(message)s')
+    logging.info("Setting up the run")
 
 
 def setup_load_data(config):
@@ -77,6 +94,9 @@ def setup_load_data(config):
 def setup_run_directories(config):
     """
     Creates a unique output directory featuring a run_id
+
+    :param config: argparse object
+    :return: -
     """
 
     run_id = datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
@@ -86,13 +106,14 @@ def setup_run_directories(config):
     p = os.path.join(config.run_dir, SETTING_PLOTS_SUBDIR)
 
     print("\nCreating directories:\n")
-    print("\t" + config.run_dir)
-    print("\t" + d)
-    print("\t" + p)
+    print(F"  {config.run_dir}")
+    print(F"  {d}")
+    print(F"  {p}")
 
     os.makedirs(config.run_dir, exist_ok=False)
     os.makedirs(d, exist_ok=False)
     os.makedirs(p, exist_ok=False)
+
 
 
 
