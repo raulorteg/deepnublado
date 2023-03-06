@@ -1,4 +1,4 @@
-SETTING_MAIN_OUTPUT_DIR = "../data/output"
+SETTING_MAIN_OUTPUT_DIR = "../data/training_runs"
 SETTING_DATA_PRODUCTS_SUBDIR = "data_products"
 SETTING_PLOTS_SUBDIR = "plots"
 
@@ -7,6 +7,8 @@ SETTING_LINE_FILE = "regressor.csv"     # also contains inputs
 SETTING_CONTINUUM_FILE = "tba.csv"
 
 SETTING_NORMALISE_INPUTS = True         # normalise all inputs to [0,1]
+SETTING_TRANSFORM_LINE_DATA = True      # e.g. take log10 of (emission line data + 1)
+SETTING_TRANSFORM_LINE_DATA_OFFSET = 1.0e-50
 
 SETTING_TRAIN_FRACTION = 0.8
 SETTING_VAL_FRACTION = 0.1
