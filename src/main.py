@@ -4,10 +4,10 @@ Main run script for our DeepNublado experiments
 import argparse
 import os
 import copy
+import signal
 import logging
 import torch
 import numpy as np
-
 
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
@@ -35,7 +35,8 @@ from settings import \
     SETTING_DATA_PRODUCTS_SUBDIR, \
     SETTING_TEST_FREQ, \
     SETTING_NORMALISE_INPUTS, \
-    SETTING_TRANSFORM_LINE_DATA
+    SETTING_TRANSFORM_LINE_DATA, \
+    SETTING_FORCE_TRAINING_STOP_ENABLED
 
 from analysis import analysis_main
 # -----------------------------------------------------------------
@@ -49,6 +50,22 @@ else:
     cuda = False
     device = torch.device("cpu")
     FloatTensor = torch.FloatTensor
+
+
+# -----------------------------------------------------------------
+#  Signal handler
+# -----------------------------------------------------------------
+class StopSignalHandler:
+    """
+    Force stop signal handling
+    """
+    def __init__(self):
+        self.stop_run = False
+
+    def __call__(self, sig, frame):
+        print("\033[96m\033[1m\nTraining will stop after this epoch. "
+              "Please wait.\033[0m\n")
+        self.stop_run = True
 
 
 # -----------------------------------------------------------------
@@ -203,7 +220,6 @@ def evaluate_model(current_epoch: int, data_loader, model, path, config,
             prefix=prefix
             )
 
-
     return loss.item()
 
 
@@ -241,6 +257,13 @@ def main(config):
     epochs_trained = -1
     data_products_path = os.path.join(config.run_dir, SETTING_DATA_PRODUCTS_SUBDIR)
 
+    # early stopping of training runs
+    if SETTING_FORCE_TRAINING_STOP_ENABLED:
+        signal_handler = StopSignalHandler()
+        signal.signal(signal.SIGINT, signal_handler)
+        print('\nPress Ctrl + C to stop the training at any time and exit. ')
+        print('Results will be saved.\n')
+
     # main training loop
     print("\033[96m\033[1m\nTraining starts now\033[0m")
     for epoch in range(1, config.n_epochs + 1):
@@ -275,7 +298,7 @@ def main(config):
               )
 
         # check for testing criterion
-        if epoch % SETTING_TEST_FREQ == 0 or epoch == config.n_epochs:
+        if epoch % config.test_freq == 0 or epoch == config.n_epochs:
 
             _ = evaluate_model(current_epoch=epoch,
                                data_loader=test_loader,
@@ -286,6 +309,16 @@ def main(config):
                                best_model=False
                                )
 
+        epochs_trained = epoch
+
+        # early stopping check
+        if SETTING_FORCE_TRAINING_STOP_ENABLED and signal_handler.stop_run:
+            print("\033[96m\033[1m\nStopping Early\033[0m\n")
+            logging.info(f"Training interrupted by user after epoch {epoch}.")
+            stopped_early = True
+            break
+
+    # fin
     print("\033[96m\033[1m\nTraining complete\033[0m\n")
     logging.info(f"Training complete. Best epoch is N={best_epoch}")
 
@@ -320,6 +353,8 @@ def main(config):
     config.best_epoch = best_epoch
     config.best_val = best_loss
     config.cuda_used = cuda
+    config.stopped_early = stopped_early
+    config.epochs_trained = epochs_trained
 
     utils_save_config_to_file(config)
     utils_save_config_to_log(config)
@@ -430,6 +465,13 @@ if __name__ == "__main__":
         help="do not run analysis"
     )
     parser.set_defaults(analysis=True)
+
+    parser.add_argument(
+        "--test_freq",
+        type=int,
+        default=SETTING_TEST_FREQ,
+        help=f"use test set every N epochs, default={SETTING_TEST_FREQ}"
+    )
 
     my_config = parser.parse_args()
 
